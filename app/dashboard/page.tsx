@@ -1,104 +1,160 @@
-"use client"
+'use client';
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Play, Pause, RotateCcw } from "lucide-react"
+import { useEffect, useState } from "react";
+import { SubjectEntity } from '@/types/SubjectEntity';
+import {
+    createSubject,
+    deleteSubject,
+    endSubjectTimer,
+    fetchSubjects,
+    getUserDetails,
+    startSubjectTimer,
+} from '@/actions/fetchMethods';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Play, Trash2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { Duration } from 'luxon';
 
-export default function PomodoroTimer() {
-    const TIMER_MODES = {
-        pomodoro: 25 * 60,
-        shortBreak: 5 * 60,
-        longBreak: 15 * 60,
-    }
+const COLORS = ['#00C4FF', '#1E1B4B', '#FFA500', '#00FF88', '#FF3366'];
 
-    const [mode, setMode] = useState<"pomodoro" | "shortBreak" | "longBreak">("pomodoro")
-    const [timeLeft, setTimeLeft] = useState(TIMER_MODES[mode])
-    const [isActive, setIsActive] = useState(false)
-    const [cycles, setCycles] = useState(0)
+export default function Dashboard() {
+    const [subjects, setSubjects] = useState<SubjectEntity[]>([]);
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+
+    const refreshSubjects = async () => {
+        const res = await fetchSubjects();
+        setSubjects(res);
+    };
 
     useEffect(() => {
-        setTimeLeft(TIMER_MODES[mode])
-        setIsActive(false)
-    }, [mode])
+        refreshSubjects();
+    }, []);
 
-    useEffect(() => {
-        let interval: NodeJS.Timeout | null = null
+    const handleAddSubject = async () => {
+        if (!name) return;
+        const user = await getUserDetails();
+        if (!user) return;
+        await createSubject(user.id, name, description);
+        setName('');
+        setDescription('');
+        refreshSubjects();
+    };
 
-        if (isActive && timeLeft > 0) {
-            interval = setInterval(() => {
-                setTimeLeft((prevTime) => prevTime - 1)
-            }, 1000)
-        } else if (isActive && timeLeft === 0) {
-            setIsActive(false)
-
-            if (mode === "pomodoro") {
-                const newCycles = cycles + 1
-                setCycles(newCycles)
-
-                if (newCycles % 4 === 0) {
-                    setMode("longBreak")
-                } else {
-                    setMode("shortBreak")
-                }
-            } else {
-                setMode("pomodoro")
-            }
-
+    const handleToggleTimer = async (subject: SubjectEntity) => {
+        if (subject.running) {
+            await endSubjectTimer(subject.id);
+        } else {
+            await startSubjectTimer(subject.id);
         }
+        setTimeout(refreshSubjects, 300); // Give backend time to update
+    };
 
-        return () => {
-            if (interval) clearInterval(interval)
-        }
-    }, [isActive, timeLeft, mode, cycles])
+    const handleDelete = async (id: number) => {
+        await deleteSubject(id);
+        refreshSubjects();
+    };
 
+    const formatDuration = (seconds: number) => {
+        return Duration.fromObject({ seconds }).toFormat('m:ss');
+    };
 
-    const formatTime = (seconds: number): string => {
-        const mins = Math.floor(seconds / 60)
-        const secs = seconds % 60
-        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
-    }
+    const totalDuration = subjects.reduce((acc, s) => acc + s.timeAllotted, 0);
 
-    const toggleTimer = () => setIsActive(!isActive)
-    const resetTimer = () => {
-        setIsActive(false)
-        setTimeLeft(TIMER_MODES[mode])
-    }
+    const getPercent = (time: number) =>
+        totalDuration === 0 ? 0 : (time / totalDuration) * 100;
 
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-white text-black dark:bg-black dark:text-white">
-            <div className="w-full max-w-md rounded-lg border border-gray-200 p-8 shadow-sm dark:border-gray-800">
-                <h1 className="mb-6 text-center text-2xl font-bold tracking-tight">Pomodoro Timer</h1>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-4">
+            <div className="col-span-2">
+                <h2 className="text-xl font-bold">Your Subjects</h2>
+                <div className="flex items-center gap-2 mt-2">
+                    <Input
+                        placeholder="Add a new subject..."
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                    />
+                    <Button onClick={handleAddSubject}>+</Button>
+                </div>
+                <div className="mt-4 space-y-4">
+                    {subjects.map((s) => (
+                        <Card key={s.id} className="flex items-center justify-between px-4 py-2">
+                            <div>
+                                <h3 className="text-lg font-semibold lowercase">{s.name}</h3>
+                                <p className="text-sm text-muted-foreground">
+                                    ⏱ {formatDuration(s.timeAllotted)} total
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    {s.numberOfSessions} session{s.numberOfSessions !== 1 ? 's' : ''}
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button size="icon" onClick={() => handleToggleTimer(s)}>
+                                    {s.running ? <span className="text-red-600 font-bold">■</span> : <Play />}
+                                </Button>
+                                <Button size="icon" variant="ghost" onClick={() => handleDelete(s.id)}>
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </Card>
+                    ))}
+                </div>
+            </div>
 
-                <Tabs defaultValue="pomodoro" className="mb-6" onValueChange={(value) => setMode(value as any)}>
-                    <TabsList className="grid w-full grid-cols-3">
-                        <TabsTrigger value="pomodoro">Pomodoro</TabsTrigger>
-                        <TabsTrigger value="shortBreak">Short Break</TabsTrigger>
-                        <TabsTrigger value="longBreak">Long Break</TabsTrigger>
-                    </TabsList>
-                </Tabs>
+            {/* Donut Chart */}
+            <div>
+                <Card>
+                    <CardContent className="p-4">
+                        <h2 className="text-lg font-bold">Time Overview</h2>
+                        <div className="relative w-48 h-48 mx-auto my-4">
+                            <svg viewBox="0 0 200 200" className="w-full h-full rotate-[-90deg]">
+                                {(() => {
+                                    let cumulativeAngle = 0;
+                                    return subjects.map((subject, i) => {
+                                        const percent = getPercent(subject.timeAllotted);
+                                        const angle = (percent / 100) * 360;
+                                        const largeArc = angle > 180 ? 1 : 0;
 
-                <div className="mb-8 flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="mb-4 text-7xl font-bold tabular-nums">{formatTime(timeLeft)}</div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {mode === "pomodoro" ? "Focus time" : "Break time"}
+                                        const startX = 100 + 80 * Math.cos((Math.PI / 180) * cumulativeAngle);
+                                        const startY = 100 + 80 * Math.sin((Math.PI / 180) * cumulativeAngle);
+                                        const endAngle = cumulativeAngle + angle;
+                                        const endX = 100 + 80 * Math.cos((Math.PI / 180) * endAngle);
+                                        const endY = 100 + 80 * Math.sin((Math.PI / 180) * endAngle);
+
+                                        const d = `
+                                            M 100 100
+                                            L ${startX} ${startY}
+                                            A 80 80 0 ${largeArc} 1 ${endX} ${endY}
+                                            Z
+                                        `;
+
+                                        cumulativeAngle = endAngle;
+
+                                        return <path key={i} d={d} fill={COLORS[i % COLORS.length]} />;
+                                    });
+                                })()}
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center text-center">
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Total</p>
+                                    <p className="text-xl font-bold">{formatDuration(totalDuration)}</p>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-
-                <div className="flex justify-center space-x-4">
-                    <Button variant="outline" size="icon" onClick={toggleTimer} className="h-12 w-12 rounded-full border-2">
-                        {isActive ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-                    </Button>
-
-                    <Button variant="outline" size="icon" onClick={resetTimer} className="h-12 w-12 rounded-full border-2">
-                        <RotateCcw className="h-5 w-5" />
-                    </Button>
-                </div>
-
-                <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">Completed cycles: {cycles}</div>
+                        <div className="text-sm mt-2 space-y-1">
+                            {subjects.map((s, i) => (
+                                <div key={s.id} className="flex justify-between">
+                                    <span style={{ color: COLORS[i % COLORS.length] }}>{s.name}</span>
+                                    <span className="font-mono text-muted-foreground">
+                                        {formatDuration(s.timeAllotted)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
         </div>
-    )
+    );
 }
