@@ -11,7 +11,7 @@ export async function fetchApi<T>(
 ): Promise<T> {
     const cooks = await cookies();
 
-    const res = await fetch("http://localhost:8085" + path, {
+    const res = await fetch("http://localhost:8100" + path, {
         method,
         next,
         body: JSON.stringify(data),

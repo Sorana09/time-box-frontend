@@ -5,5 +5,6 @@ export type UserEntity = {
     email: string;
     createdAt: string;
     updatedAt: string;
+    timeStudied: number;
 
 };
